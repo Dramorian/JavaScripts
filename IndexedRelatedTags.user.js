@@ -494,6 +494,10 @@ const RELATED_QUERY_CONTROL_CSS = `
     border-color: darkorange;
     margin-right: 0.5em;
 }
+#irt-checklist-query[disabled] {
+    filter: grayscale(0.7) brightness(1.3);
+    cursor: not-allowed;
+}
 #irt-related-query-type label {
     color: black;
     background-color: lightgrey;
@@ -591,7 +595,12 @@ const RELATED_TAG_SETTINGS_DETAILS = `
 
 const NETWORK_SETTINGS_DETAILS = `
 <ul>
-    <li><b>Recheck data interval:</b> Data expiring within this period gets automatically requeried.</li>
+    <li><b>Recheck data interval:</b>
+        <ul>
+            <li>Data expiring within this period gets automatically requeried.</li>
+            <li>This is queried in the background, so it doesn't impact performance.</li>
+        </ul>
+    </li>
     <li><b>Network only mode:</b>
         <ul>
             <li>Can be used to correct cache data that has been changed on the server.</li>
@@ -654,7 +663,7 @@ const WIKI_PAGE_BUTTON = `
 
 const CHECKLIST_BUTTON = `
 <div id="irt-checklist-controls" style="display: inline-flex; margin-bottom: 0.5em; margin-right: 1em;">
-    <button id="irt-checklist-query" class="irt-checklist-button" title="Query checklist only.">Checklist</button>
+    <button id="irt-checklist-query" class="irt-checklist-button" title="Query checklist only." disabled="disabled">Checklist</button>
 </div>`;
 
 //Time constants
@@ -1022,6 +1031,12 @@ FUNC.GetChecklistTagsArray = function (tag_name) {
         return null;
     }
     return tag_array;
+};
+
+FUNC.GetChecklistTags = function () {
+    return Object.keys(localStorage)
+                 .filter((name) => name.startsWith('irt-checklist-'))
+                 .map((name) => name.replace('irt-checklist-', ""));
 };
 
 FUNC.CreateTagArray = function (tag_list, tag_data) {
@@ -1488,6 +1503,7 @@ FUNC.SaveChecklistTag = async function () {
         }
         JSPLib.notice.notice("Checklist updated.");
     }
+    IRT.channel.postMessage({type: 'checklist_update'});
 };
 
 FUNC.PopulateChecklistTag = function () {
@@ -1501,10 +1517,7 @@ FUNC.PopulateChecklistTag = function () {
 };
 
 FUNC.ListChecklistTags = function () {
-    let tag_list = Object.keys(localStorage)
-                         .filter((name) => name.startsWith('irt-checklist-'))
-                         .map((name) => name.replace('irt-checklist-', ""))
-                         .sort();
+    let tag_list = FUNC.GetChecklistTags().sort();
     $('#irt-checklist-frequent-tags textarea').val(tag_list.join('\n'));
 };
 
@@ -1571,6 +1584,18 @@ FUNC.InitializeRelatedTagsSection = function () {
     $(document).on(PROGRAM_CLICK, '.irt-wiki-button', FUNC.WikiPageButton);
     $(document).on(PROGRAM_CLICK, '.irt-checklist-button', FUNC.ChecklistButton);
     $(document).on('input.irt', '#post_tag_string', FUNC.UpdateSelected);
+    $('#post_tag_string').on(PROGRAM_CLICK + ', keyup.irt, input.irt', (event) => {
+        if (event.type === 'click' || (event.type === 'keyup' && ['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp'].includes(event.key)) || (event.type === 'input' && event.isTrigger === 3)) {
+            let currenttag = Danbooru.RelatedTag.current_tag().trim().toLowerCase();
+            IRT.checklist_tags ??= FUNC.GetChecklistTags();
+            let $button = $('#irt-checklist-query');
+            if (IRT.checklist_tags.includes(currenttag)) {
+                $button.attr('disabled', null);
+            } else {
+                $button.attr('disabled', 'disabled');
+            }
+        }
+    });
     FUNC.InitialiazeRelatedQueryControls();
     $('.related-tags').before(IRT_RELATED_TAGS_SECTION);
     $('#related-tags-container').hide();
@@ -1724,6 +1749,21 @@ FUNC.CleanupTasks = function () {
     JSPLib.storage.pruneEntries(PROGRAM_SHORTCUT, PROGRAM_DATA_REGEX, PRUNE_EXPIRES);
 };
 
+//Settings functions
+
+FUNC.BroadcastIRT = function (self, event) {
+    self.debuglog(`(${event.data.type}):`);
+    switch (event.data.type) {
+        case 'checklist_update':
+            if (IRT.checklist_tags) {
+                IRT.checklist_tags = FUNC.GetChecklistTags();
+            }
+            //falls through
+        default:
+            //do nothing
+    }
+};
+
 //Menu functions
 
 FUNC.OptionCacheDataKey = function (data_type, data_value) {
@@ -1829,6 +1869,7 @@ FUNC.Main = function(self) {
         run_on_settings: true,
         default_data: DEFAULT_VALUES,
         initialize_func: FUNC.InitializeProgramValues,
+        broadcast_func: FUNC.BroadcastIRT,
         menu_css: SETTINGS_MENU_CSS + '\n' + LIBRARY_MENU_CSS,
     };
     if (!JSPLib.menu.preloadScript(IRT, FUNC.RenderSettingsMenu, preload)) return;
@@ -1874,3 +1915,5 @@ JSPLib.load.exportData(PROGRAM_NAME, IRT, {datalist: ['cached_data'], other_data
 /****Execution start****/
 
 JSPLib.load.programInitialize(FUNC.Main, {program_name: PROGRAM_NAME, required_variables: PROGRAM_LOAD_REQUIRED_VARIABLES, required_selectors: PROGRAM_LOAD_REQUIRED_SELECTORS});
+
+//Only enable checklist button if a tag with a checklist is currently selected
