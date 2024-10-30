@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         New Twitter Image Searches and Stuff
 // @namespace    https://github.com/BrokenEagle/JavaScripts
-// @version      10.1
+// @version      10.2
 // @description  Searches Danbooru database for tweet IDs, adds image search links.
 // @source       https://danbooru.donmai.us/users/23799
 // @author       BrokenEagle
@@ -630,6 +630,17 @@ const PROGRAM_CSS = `
     border: 1px solid;
     padding: 4px;
 }
+.ntisas-query-results {
+    border-radius: 25px 0 0 25px;
+}
+.ntisas-query-idlink {
+    border-radius: 25px 0 0 25px;
+    min-width: 8em;
+}
+.ntisas-query-help {
+    border-radius: 0 25px 25px 0;
+    min-width: 2em;
+}
 [ntisas-tweet=main] .ntisas-query-button {
     margin: 0 -7px;
 }
@@ -922,6 +933,10 @@ const PROGRAM_CSS = `
     margin-top: 0.5em;
     margin-left: -4em;
 }
+.ntisas-tweet-image-menu {
+    border: 2px solid;
+    display: flex;
+}
 .ntisas-activated,
 .ntisas-activated:hover {
     color: unset;
@@ -988,6 +1003,9 @@ ${TWITTER_SPACING_SELECTOR} {
 .ntisas-view-indicator {
     width: 2em;
 }
+.ntisas-select-controls {
+    position: absolute;
+}
 .ntisas-similar-results .ntisas-select-controls {
     right: 0;
     top: -5px;
@@ -1008,7 +1026,29 @@ ${TWITTER_SPACING_SELECTOR} {
     color: dodgerblue;
     font-weight: bold;
     font-size: 14px;
-}`;
+}
+.ntisas-already-seen {
+    color: red;
+    font-family: monospace;
+    font-weight: bold;
+    border: 1px solid red;
+    padding: 2px;
+    border-radius: 5px;
+}
+.ntisas-posts-selection {
+    position: relative;
+    height: 1.5em;
+    margin-top: 1em;
+}
+.ntisas-confirm-selection {
+    position: relative;
+    display: block;
+    width: 10em;
+}
+.ntisas-small-text {
+    font-size: 12px;
+}
+`;
 
 const NOTICE_CSS = `
 div#ntisas-notice.ui-state-highlight {
@@ -1566,7 +1606,7 @@ const MEDIA_STATISTICS = `
 
 const NTISAS_TWEET_MENU = `
 <div class="ntisas-tweet-controls">
-    <div class="ntisas-tweet-image-menu" style="border: 2px solid black; display: flex;">
+    <div class="ntisas-tweet-image-menu">
         <div style="width: 7em;">
             <div class="ntisas-tweet-header"><a class="ntisas-expanded-link">NTISAS</a></div>
             <div class="ntisas-download-header">Download (&nbsp;<span class="ntisas-download-counter">0</span>&nbsp;)</div>
@@ -1580,7 +1620,7 @@ const NTISAS_TWEET_MENU = `
 </div>`;
 
 const SELECTION_CONTROLS = `
-<div style="position: absolute" class="ntisas-select-controls ntisas-links">
+<div class="ntisas-select-controls ntisas-links">
     [
         <a class="ntisas-expanded-link" data-type="all">all</a> |
         <a class="ntisas-expanded-link" data-type="none">none</a> |
@@ -1860,6 +1900,16 @@ search\?
 (?<query>.*?\bq=.+)
 `;
 
+const QUOTES_PAGE_REGEX = JSPLib.utility.verboseRegex('i')`
+${TWITTER_HOST}
+/
+(?<account>${TWITTER_ACCOUNT})
+/status/
+(?<id>${TWITTER_ID})
+/quotes
+${QUERY_END}
+`;
+
 const TWEET_PAGE_REGEX = JSPLib.utility.verboseRegex('i')`
 ${TWITTER_HOST}
 /
@@ -1943,6 +1993,7 @@ const PAGE_REGEXES = {
     likes: LIKES_PAGE_REGEX,
     replies: REPLIES_PAGE_REGEX,
     search: SEARCH_PAGE_REGEX,
+    quotes: QUOTES_PAGE_REGEX,
     tweet: TWEET_PAGE_REGEX,
     web_tweet: WEB_TWEET_PAGE_REGEX,
     photo: PHOTO_PAGE_REGEX,
@@ -2042,7 +2093,7 @@ const TIMELINE_VALS = {
 
 //Other constants
 
-const STREAMING_PAGES = ['home', 'main', 'likes', 'replies', 'media', 'list', 'search', 'hashtag', 'events', 'topics'];
+const STREAMING_PAGES = ['home', 'main', 'likes', 'replies', 'quotes', 'media', 'list', 'search', 'hashtag', 'events', 'topics'];
 const MEDIA_TYPES = ['images', 'media', 'videos'];
 
 const ALL_LISTS = {
@@ -3373,9 +3424,9 @@ function RenderSimilarIDsLink(post_ids, similar_data, level, type) {
     ${text}
 </a>`;
     return `
-<span class="ntisas-query-button" style="border-radius: 25px 0 0 25px; min-width: 8em;">${idlink}</span>
+<span class="ntisas-query-button ntisas-query-idlink">${idlink}</span>
 |
-<span class="ntisas-query-button" style="border-radius: 0 25px 25px 0; min-width: 2em;">${helplink}</span>
+<span class="ntisas-query-button ntisas-query-help">${helplink}</span>
 `;
 }
 
@@ -3421,10 +3472,10 @@ function RenderConfirmContainer(image_urls) {
     image_urls.forEach((image, i) => {
         html += RenderTwimgPreview(image, i, true);
     });
-    let controls = (image_urls.length > 1 ? `<div style="position: relative; display: block; width: 10em;">${SELECTION_CONTROLS}</div>` : "");
+    let controls = (image_urls.length > 1 ? `<div class="ntisas-confirm-selection">${SELECTION_CONTROLS}</div>` : "");
     return `
 <div class="ntisas-confirm-image ntisas-selectable-results">
-    <p style="font-size:12px">Selected images will be used for the query. Press <b>Submit</b> to execute query, or <b>Cancel</b> to go back.</p>
+    <p class="ntisas-small-text">Selected images will be used for the query. Press <b>Submit</b> to execute query, or <b>Cancel</b> to go back.</p>
     ${html}
     ${controls}
 </div>`;
@@ -3437,7 +3488,7 @@ function RenderPostsContainer(all_posts) {
         let addons = RenderPreviewAddons(post.source, post.id, null, post.ext, post.size, post.width, post.height, is_user_upload);
         html += RenderPostPreview(post, addons);
     });
-    let controls = (all_posts.length > 1 ? `<div style="position: relative; height: 1.5em; margin-top: 1em">${SELECTION_CONTROLS}</div>` : "");
+    let controls = (all_posts.length > 1 ? `<div class="ntisas-posts-selection">${SELECTION_CONTROLS}</div>` : "");
     let width_addon = (all_posts.length > 5 ? 'style="width:850px"' : "");
     return `
 <div class="ntisas-post-result ntisas-qtip-container ntisas-selectable-results" ${width_addon}>
@@ -3505,15 +3556,15 @@ function RenderNomatchLinks(tweet_id, no_iqdb_results, no_sauce_results, merge_r
     let sauce_link = (no_sauce_results ? '<a class="ntisas-reset-results ntisas-database-no-match ntisas-no-sources ntisas-expanded-link" data-type="sauce" data-replace="2">no results</a>' : '<a class="ntisas-check-sauce ntisas-expanded-link" data-replace="2">Sauce</a>');
     let help_info = GetNomatchHelp(no_url_results, no_iqdb_results, no_sauce_results);
     return `
-<span class="ntisas-query-button" style="border-radius: 25px 0 0 25px;">${results_link}</span>
+<span class="ntisas-query-button ntisas-query-results">${results_link}</span>
     |
-<span class="ntisas-query-button">${url_link}</span>
+<span class="ntisas-query-button ntisas-query-url">${url_link}</span>
     |
-<span class="ntisas-query-button">${iqdb_link}</span>
+<span class="ntisas-query-button ntisas-query-iqdb">${iqdb_link}</span>
     |
-<span class="ntisas-query-button">${sauce_link}</span>
+<span class="ntisas-query-button ntisas-query-sauce">${sauce_link}</span>
     |
-<span class="ntisas-query-button" style="border-radius: 0 25px 25px 0; min-width: 2em;">${RenderHelp(help_info)}</span>
+<span class="ntisas-query-button ntisas-query-help">${RenderHelp(help_info)}</span>
 `;
 }
 
@@ -4949,7 +5000,7 @@ function SeenTweet(entries, observer) {
             let is_duplicate = NTISAS.seen_tweet.has(tweet_id);
             NTISAS.seen_tweet.add(tweet_id);
             if (is_duplicate && $tweet.attr('ntisas-tweet') === 'stream') {
-                $tweet.find('.ntisas-tweet-status').before('<div style="color: red; font-family: monospace; font-weight: bold; border: 1px solid red; padding: 2px; border-radius: 5px;">already seen</div>');
+                $tweet.find('.ntisas-tweet-status').before('<div class="ntisas-already-seen">already seen</div>');
             }
             observer.unobserve(entry.target);
         }
@@ -5734,10 +5785,12 @@ function MarkupMediaType(tweet) {
                 $entry.addClass('ntisas-tweet-quote3').attr('ntisas-media-type', 'quote3');
             } else if ($entry.text() === "This Tweet is unavailable.") {
                 $entry.addClass('ntisas-tweet-quote4').attr('ntisas-media-type', 'quote4');
-            } else if ($('video, [data-testid=playButton]', tweet).length) {
+            } else if ($('video, [data-testid=playButton]', entry).length) {
                 $entry.addClass('ntisas-tweet-video').attr('ntisas-media-type', 'video');
                 ret = true;
-            } else {
+            } else if (entry.tagName === 'BUTTON') {
+                $entry.addClass('ntisas-tweet-button').attr('ntisas-media-type', 'button');
+           } else {
                 $entry.addClass('ntisas-tweet-image').attr('ntisas-media-type', 'image');
                 ret = true;
             }
@@ -6756,7 +6809,7 @@ async function Main() {
 /****Initialization****/
 
 //Variables for debug.js
-JSPLib.debug.debug_console = false;
+JSPLib.debug.debug_console = true;
 JSPLib.debug.level = JSPLib.debug.INFO;
 JSPLib.debug.program_shortcut = PROGRAM_SHORTCUT;
 
