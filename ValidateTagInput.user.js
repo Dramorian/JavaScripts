@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         ValidateTagInput
+// @name         ValidateTagInput (aibooru)
 // @namespace    https://github.com/BrokenEagle/JavaScripts
 // @version      29.10
 // @description  Validates tag add/remove inputs on a post edit or upload, plus several other post validations.
